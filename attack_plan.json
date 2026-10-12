@@ -13,6 +13,11 @@
       "CbaaAgent.update_state (Bid Calculation)"
     ]
   },
+  "risk_scoring": {
+    "_comment": "Custom RPN: priority = impact*likelihood/detectability, NOT standard impact*likelihood*detectability.",
+    "formula": "priority = impact * likelihood / detectability",
+    "rationale": "In this threat model, high detectability is protective (easy to see => lower priority), while low detectability amplifies risk by division rather than by multiplicative absence. E.g. H1 10*8/5=16 would read as 400 under standard RPN; 16 is intentional, not a typo."
+  },
   "hypotheses": [
     {
       "id": "H1",

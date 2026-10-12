@@ -1,47 +1,47 @@
 import math
 
 class Evaluator:
-    def __init__(self):
-        pass
+    def __init__(self, w_value=0.5, w_distance=0.3, w_bytes=0.2,
+                 distance_budget=1000.0, bytes_threshold=65536.0):
+        self.w_value = w_value
+        self.w_distance = w_distance
+        self.w_bytes = w_bytes
+        self.distance_budget = distance_budget
+        self.bytes_threshold = bytes_threshold
+
+    def _distance(self, a, b):
+        try:
+            return math.dist(a, b)
+        except Exception:
+            return 0.0
 
     def calculate_score(self, scenario_data):
-        # scenario_data: {
-        #   "tasks": [{id, value, location, requirements}],
-        #   "agents": [{id, location, capabilities, assignments}],
-        #   "total_bytes": int
-        # }
+        tasks = scenario_data.get("tasks", [])
+        agents = scenario_data.get("agents", [])
+        total_bytes = scenario_data.get("total_bytes", 0)
 
-        # 1. Value Ratio: (Sum of values of completed tasks) / (Total possible value)
-        total_value = sum(t['value'] for t in scenario_data['tasks'])
-        completed_value = 0
-        for t in scenario_data['tasks']:
-            if t['assigned_to'] is not None:
-                # Validate capability?
-                # Assume simulation ensures valid assignment or we penalize here.
-                completed_value += t['value']
+        total_value = sum(t.get("value", 0) for t in tasks)
+        completed_value = sum(
+            t.get("value", 0) for t in tasks if t.get("assigned_to") is not None
+        )
+        value_ratio = completed_value / total_value if total_value > 0 else 0.0
 
-        value_ratio = completed_value / total_value if total_value > 0 else 0
+        agent_locs = {a.get("id"): a.get("location") for a in agents}
+        total_distance = 0.0
+        for t in tasks:
+            aid = t.get("assigned_to")
+            tloc = t.get("location") or t.get("pos")
+            aloc = agent_locs.get(aid)
+            if aid is not None and tloc is not None and aloc is not None:
+                total_distance += self._distance(tuple(aloc), tuple(tloc))
 
-        # 2. Normalized Distance: 1.0 - (Total Distance / Max Budget Distance)
-        # Simplified: Just sum distance traveled.
-        # But score needs to be maximized.
-        # Let's assume a "Distance Score" where closer = better.
-        # Format: score = w1 * value_ratio + w2 * distance_score + w3 * bytes_score
+        distance_score = 1.0 / (1.0 + total_distance / self.distance_budget)
 
-        total_distance = 0
-        for a in scenario_data['agents']:
-            # Calculate distance from start to assigned tasks
-            # TSP is hard, let's assume direct line to one task or sequence.
-            pass
+        bytes_score = 1.0 / (1.0 + total_bytes / self.bytes_threshold)
 
-        # 3. Bytes: Less is better.
-        # bytes_score = 1.0 / (1.0 + total_bytes / threshold)
-
-        # For this Phase, the directive says "Score >= 0.7".
-        # I need to know the formula.
-        # "SCORE_COMPONENTS: value_ratio, normalized_distance, normalized_bytes"
-        # Let's assume arithmetic mean or weighted.
-
-        # Placeholder
-        score = value_ratio # Mostly driven by completion for now
+        score = (
+            self.w_value * value_ratio
+            + self.w_distance * distance_score
+            + self.w_bytes * bytes_score
+        )
         return score

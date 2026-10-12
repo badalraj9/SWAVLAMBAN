@@ -1,27 +1,39 @@
 from src.agents.bully_agent import BullyAgent
 from src.agents.cbaa_agent import CbaaAgent
 from src.utils.message import Message
-import time
 
-# Mock Task Registry for S7
+# Task Registry: reqs + value + pos so bids are distance/value-based.
 TASK_REGISTRY = {
-    i: {"reqs": []} for i in range(100)
+    i: {"reqs": [], "value": 10.0, "pos": ((i * 13) % 100, (i * 29) % 100)}
+    for i in range(100)
 }
 # Task 5 requires "heavy_lift"
 TASK_REGISTRY[5]["reqs"] = ["heavy_lift"]
 
+
 class SwarmAgent(CbaaAgent, BullyAgent):
-    def __init__(self, agent_id, incoming_queue, outgoing_queue, num_tasks=10, capabilities=None):
-        CbaaAgent.__init__(self, agent_id, incoming_queue, outgoing_queue, num_tasks)
-
-        # Bully State Init
-        self.leader_id = None
-        self.coordinator_timeout = 2.0
-        self.election_timeout = 1.0
-        self.last_leader_msg = time.time()
-        self.election_start_time = 0.0
-        self.waiting_for_answer = False
-
+    def __init__(
+        self,
+        agent_id,
+        incoming_queue=None,
+        outgoing_queue=None,
+        num_tasks=10,
+        capabilities=None,
+        num_agents=0,
+        seed=42,
+        transport=None,
+    ):
+        CbaaAgent.__init__(self, agent_id, incoming_queue, outgoing_queue, num_tasks,
+                           transport=transport)
+        BullyAgent.__init__(
+            self,
+            agent_id,
+            incoming_queue,
+            outgoing_queue,
+            num_agents=num_agents,
+            seed=seed,
+            transport=transport,
+        )
         self.capabilities = capabilities if capabilities else []
 
     def update_state(self):

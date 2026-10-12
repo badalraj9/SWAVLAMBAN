@@ -1,2 +1,5 @@
 pytest
 matplotlib
+openai
+python-dotenv
+rich

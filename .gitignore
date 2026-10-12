@@ -6,3 +6,5 @@ __pycache__/
 env/
 venv/
 .pytest_cache/
+.env
+debate_transcript_*.json

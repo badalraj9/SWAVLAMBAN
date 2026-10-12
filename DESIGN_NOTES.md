@@ -38,6 +38,9 @@ During the "Hell-Test" phase, our adversarial agent identified three critical vu
 
 These findings drove the hardening strategy described below.
 
+### Risk Scoring: Custom RPN
+`attack_plan.json` uses `priority = impact*likelihood/detectability`, not standard `impact*likelihood*detectability`. In this threat model low detectability amplifies risk by division, while high detectability is protective and lowers priority. E.g. H1 `10*8/5=16` is intentional, not a typo for `400`.
+
 ### Clarification: Leader ID Artifact
 In the provided simulator logs, the "Leader" is often identified by the highest ID active in the network. During adversarial testing, a malicious agent (e.g., Agent 9) may continue to broadcast leadership claims. While the simulator might log "Agent 9" as the leader due to its high ID, **honest agents reject these messages** if they fail the security checks (UUID mismatch or stale term). Thus, leadership authority is determined by *message acceptance*, not merely by the sender's ID.
 

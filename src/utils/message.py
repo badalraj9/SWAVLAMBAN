@@ -1,7 +1,8 @@
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 import time
 import json
+
 
 @dataclass
 class Message:
@@ -16,6 +17,6 @@ class Message:
         return json.dumps(asdict(self))
 
     @staticmethod
-    def from_json(json_str: str) -> 'Message':
+    def from_json(json_str: str) -> "Message":
         data = json.loads(json_str)
         return Message(**data)

@@ -2,54 +2,110 @@ import multiprocessing
 import time
 import logging
 import random
-import json
 from src.utils.message import Message
+from src.utils.tamper_log import TamperEvidentLog
+
+
+def _agent_runner(
+    AgentClass, agent_id, incoming, outgoing, caps, num_agents=0, seed=42,
+    use_udp=False, drop_rate=0.0,
+):
+    transport = None
+    if use_udp:
+        from src.utils.transport import UDPTransport
+        transport = UDPTransport(agent_id, num_agents=num_agents,
+                                 drop_rate=drop_rate, seed=seed)
+        incoming = outgoing = None
+    try:
+        agent = AgentClass(
+            agent_id,
+            incoming,
+            outgoing,
+            capabilities=caps,
+            num_agents=num_agents,
+            seed=seed + agent_id,
+            transport=transport,
+        )
+    except TypeError:
+        try:
+            agent = AgentClass(
+                agent_id,
+                incoming,
+                outgoing,
+                num_agents=num_agents,
+                seed=seed + agent_id,
+            )
+        except TypeError:
+            try:
+                agent = AgentClass(
+                    agent_id,
+                    incoming,
+                    outgoing,
+                    capabilities=caps,
+                    num_agents=num_agents,
+                )
+            except TypeError:
+                try:
+                    agent = AgentClass(agent_id, incoming, outgoing, capabilities=caps)
+                except TypeError:
+                    agent = AgentClass(agent_id, incoming, outgoing)
+    if transport is not None and getattr(agent, "transport", None) is None:
+        agent.transport = transport
+    try:
+        agent.run()
+    except KeyboardInterrupt:
+        pass
+
 
 class Simulator:
-    def __init__(self, num_agents: int, drop_rate=0.0, min_latency=0.0, max_latency=0.0):
+    def __init__(
+        self,
+        num_agents: int,
+        drop_rate=0.0,
+        min_latency=0.0,
+        max_latency=0.0,
+        seed: int = 42,
+        use_udp: bool = False,
+    ):
         self.num_agents = num_agents
-        self.queues = {} # agent_id -> (incoming_queue, outgoing_queue)
+        self.seed = seed
+        self.rng = random.Random(seed)
+        self.queues = {}
         self.processes = []
         self.running = False
-        self.logger = logging.getLogger("Simulator")
-        # logging.basicConfig(level=logging.INFO)
-
-        # Network parameters
         self.drop_rate = drop_rate
         self.min_latency = min_latency
         self.max_latency = max_latency
-        self.delayed_messages = [] # (delivery_time, msg)
-
-        # Central switchboard
+        self.delayed_messages = []
+        self.use_udp = use_udp
         self.switchboard_queue = multiprocessing.Queue()
+        self.audit_log = TamperEvidentLog()
+
+    @property
+    def logger(self):
+        return logging.getLogger("Simulator")
 
     def setup_agents(self, AgentClass, agent_capabilities=None):
         for i in range(self.num_agents):
-            incoming = multiprocessing.Queue()
-            self.queues[i] = incoming
-
-            # Support caps if passed, else default
+            incoming = None if self.use_udp else multiprocessing.Queue()
+            if not self.use_udp:
+                self.queues[i] = incoming
             caps = agent_capabilities.get(i, []) if agent_capabilities else []
-
-            # Check constructor signature (hacky)
-            # We assume SwarmAgent signature
             p = multiprocessing.Process(
-                target=self._run_agent,
-                args=(AgentClass, i, incoming, self.switchboard_queue, caps)
+                target=_agent_runner,
+                args=(
+                    AgentClass,
+                    i,
+                    incoming,
+                    self.switchboard_queue,
+                    caps,
+                    self.num_agents,
+                    self.seed,
+                    self.use_udp,
+                    self.drop_rate,
+                ),
             )
             self.processes.append(p)
-
-    def _run_agent(self, AgentClass, agent_id, incoming, outgoing, caps):
-        # Try creating with caps, fallback if fails (for backward compat with older agents)
-        try:
-            agent = AgentClass(agent_id, incoming, outgoing, capabilities=caps)
-        except TypeError:
-            agent = AgentClass(agent_id, incoming, outgoing)
-
-        try:
-            agent.run()
-        except KeyboardInterrupt:
-            pass
 
     def start_async(self):
         self.running = True
@@ -65,29 +121,23 @@ class Simulator:
             p.join()
 
     def step(self, duration: float):
-        """Runs the switchboard for a duration."""
+        if self.use_udp:
+            time.sleep(duration)
+            return
         start_time = time.time()
         while time.time() - start_time < duration:
             now = time.time()
-
-            # 1. Process new messages from agents
             while not self.switchboard_queue.empty():
                 try:
                     msg_json = self.switchboard_queue.get_nowait()
                     msg = Message.from_json(msg_json)
-
-                    # Chaos: Packet Loss
-                    if random.random() < self.drop_rate:
+                    if self.rng.random() < self.drop_rate:
                         continue
-
-                    # Chaos: Latency
-                    latency = random.uniform(self.min_latency, self.max_latency)
+                    latency = self.rng.uniform(self.min_latency, self.max_latency)
                     delivery_time = now + latency
                     self.delayed_messages.append((delivery_time, msg))
                 except Exception:
                     pass
-
-            # 2. Deliver ready messages
             remaining_messages = []
             for deliver_t, msg in self.delayed_messages:
                 if now >= deliver_t:
@@ -95,7 +145,6 @@ class Simulator:
                 else:
                     remaining_messages.append((deliver_t, msg))
             self.delayed_messages = remaining_messages
-
             time.sleep(0.01)
 
     def kill_agent(self, agent_id):
@@ -107,7 +156,16 @@ class Simulator:
                 self.logger.info(f"Killed Agent {agent_id}")
 
     def _deliver_message(self, msg: Message):
-        if msg.receiver_id == -1: # Broadcast
+        self.audit_log.append(
+            "MSG",
+            {
+                "sender": msg.sender_id,
+                "receiver": msg.receiver_id,
+                "type": msg.msg_type,
+                "content": msg.content,
+            },
+        )
+        if msg.receiver_id == -1:
             for aid, q in self.queues.items():
                 if aid != msg.sender_id:
                     q.put(msg.to_json())

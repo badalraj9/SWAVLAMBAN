@@ -2,6 +2,7 @@ from src.agents.base_agent import BaseAgent, AgentState
 from src.utils.message import Message
 import time
 
+
 class TrivialAgent(BaseAgent):
     def __init__(self, agent_id, incoming_queue, outgoing_queue):
         super().__init__(agent_id, incoming_queue, outgoing_queue)
@@ -20,7 +21,9 @@ class TrivialAgent(BaseAgent):
         # If I am not the leader, check for timeout
         if self.state == AgentState.FOLLOWER:
             if current_time - self.last_leader_heartbeat > self.leader_timeout:
-                self.logger.info(f"Agent {self.agent_id}: Leader {self.leader_id} timed out. Declaring self leader.")
+                self.logger.info(
+                    f"Agent {self.agent_id}: Leader {self.leader_id} timed out. Declaring self leader."
+                )
                 self.leader_id = self.agent_id
                 self.state = AgentState.LEADER
 
@@ -42,9 +45,9 @@ class TrivialAgent(BaseAgent):
                 # Leader is alive
                 self.last_leader_heartbeat = time.time()
                 if self.state == AgentState.LEADER and sender_id != self.agent_id:
-                     # I thought I was leader, but someone else claims to be leader with same ID?
-                     # (Shouldn't happen with unique IDs)
-                     pass
+                    # I thought I was leader, but someone else claims to be leader with same ID?
+                    # (Shouldn't happen with unique IDs)
+                    pass
             elif sender_id < self.leader_id:
                 # Lower ID, ignore unless I am leader, then I might send a heartbeat back so they know I exist
                 # But my periodic heartbeat handles that.

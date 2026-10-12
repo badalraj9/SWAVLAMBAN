@@ -1,11 +1,13 @@
-from src.agents.base_agent import BaseAgent, AgentState, OperationalMode
+from src.agents.base_agent import BaseAgent, OperationalMode
 from src.utils.message import Message
 import time
-import random
+import math
+
 
 class CbaaAgent(BaseAgent):
-    def __init__(self, agent_id, incoming_queue, outgoing_queue, num_tasks=10):
-        super().__init__(agent_id, incoming_queue, outgoing_queue)
+    def __init__(self, agent_id, incoming_queue=None, outgoing_queue=None, num_tasks=10,
+                 transport=None):
+        super().__init__(agent_id, incoming_queue, outgoing_queue, transport=transport)
         self.num_tasks = num_tasks
 
         # State for CBAA
@@ -15,14 +17,30 @@ class CbaaAgent(BaseAgent):
         self.last_change_time = time.time()
 
         # Neighbor Liveness
-        self.neighbor_heartbeats = {} # id -> time
-        self.neighbor_timeout = 2.0 # Seconds
+        self.neighbor_heartbeats = {}  # id -> time
+        self.neighbor_timeout = 2.0  # Seconds
         self.last_heartbeat_broadcast = 0.0
 
+    def _agent_pos(self):
+        return (float((self.agent_id * 17) % 100), float((self.agent_id * 31) % 100))
+
+    def _task_info(self, task_id):
+        value = 10.0
+        pos = (float((task_id * 13) % 100), float((task_id * 29) % 100))
+        try:
+            from src.agents.swarm_agent import TASK_REGISTRY
+            info = TASK_REGISTRY.get(task_id, {})
+            value = float(info.get("value", value))
+            if "pos" in info:
+                pos = tuple(info["pos"])
+        except Exception:
+            pass
+        return value, tuple(pos)
+
     def calculate_bid(self, task_id):
-        # Deterministic pseudo-random bid based on agent_id and task_id
-        random.seed(self.agent_id * 1000 + task_id)
-        return random.random()
+        value, task_pos = self._task_info(task_id)
+        dist = math.dist(self._agent_pos(), task_pos)
+        return value / (1.0 + dist)
 
     def update_state(self):
         current_time = time.time()
@@ -76,10 +94,7 @@ class CbaaAgent(BaseAgent):
             self.last_heartbeat_broadcast = current_time
 
     def send_cbaa_update(self):
-        content = {
-            "y": self.y,
-            "z": self.z
-        }
+        content = {"y": self.y, "z": self.z}
         self.send_message(-1, "CBAA_UPDATE", content)
 
     def handle_message(self, msg: Message):
